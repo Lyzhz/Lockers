@@ -1,11 +1,10 @@
 import { GluestackUIProvider } from '@gluestack-ui/themed';
 import { theme } from './src/theme/theme';
-import AppNavigator from './src/navigation/AppNavigator';
+import "./global.css"
 
 export default function App() {
   return (
-    <GluestackUIProvider config={theme}>
-      <AppNavigator />
+    <GluestackUIProvider config={theme}> 
     </GluestackUIProvider>
   );
 }
