@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
+import 'package:lockers/page/aaaa_page.dart';
+import 'package:lockers/page/home_page.dart';
+import 'package:lockers/page/person_page.dart';
+import 'package:lockers/page/search_page.dart';
+import 'package:lockers/page/settings_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,7 +36,7 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: (const MyHomePage(title: 'Flutter Demo Home Page')),
     );
   }
 }
@@ -47,7 +52,6 @@ class MyHomePage extends StatefulWidget {
   // case the title) provided by the parent (in this case the App widget) and
   // used by the build method of the State. Fields in a Widget subclass are
   // always marked "final".
-
   final String title;
 
   @override
@@ -55,28 +59,24 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
 // Bottom NavBar
   final navigationKey = GlobalKey<CurvedNavigationBarState>();
   int index = 2;
+
+final screens = [
+  HomePage(),
+  SearchPage(),
+  SettingsPage(),
+  AaaaPage(),
+  PersonPage(),
+];
+
+
   @override
   Widget build(BuildContext context) {
     // Botoes da NavBar
     final items = <Widget>[
-      Icon(Icons.lock, size: 30),
+      Icon(Icons.home, size: 30),
       Icon(Icons.search, size: 30),
       Icon(Icons.settings, size: 30),
       Icon(Icons.settings, size: 30),
@@ -91,35 +91,7 @@ class _MyHomePageState extends State<MyHomePage> {
         elevation: 0,
         centerTitle: true
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              '$index',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 120,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 16),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                foregroundColor: Colors.black,
-                backgroundColor: Colors.white,
-                minimumSize: Size(250, 56),
-              ),
-              child: Text('Go to 0', style: TextStyle(fontSize: 32)),
-              onPressed: () {
-                final navigationState = navigationKey.currentState!;
-
-                navigationState.setPage(0);
-              },
-            )
-          ],
-        ),
-      ),
+      body: screens[index],
       bottomNavigationBar: Theme(
         data: Theme.of(context).copyWith(
           iconTheme: IconThemeData(color: const Color.fromRGBO(40, 86, 155, 1)),
