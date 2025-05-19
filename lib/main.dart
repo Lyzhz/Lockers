@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 
 void main() {
   runApp(const MyApp());
@@ -54,6 +55,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+
   int _counter = 0;
 
   void _incrementCounter() {
@@ -67,56 +69,41 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
+  int index = 2;
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    final items = <Widget>[
+      Icon(Icons.lock, size: 30),
+      Icon(Icons.search, size: 30),
+      Icon(Icons.settings, size: 30),
+      Icon(Icons.settings, size: 30),
+      Icon(Icons.person, size: 30),
+    ];
+
     return Scaffold(
+      extendBody: true,
+      backgroundColor: Colors.red, 
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: Text('INFINITY BR LOCKERS'),
+        elevation: 0,
+        centerTitle: true
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
+      body: Image.network('https://sdmntprnorthcentralus.oaiusercontent.com/files/00000000-5904-622f-b02f-6a26d6d1028b/raw?se=2025-05-19T16%3A52%3A04Z&sp=r&sv=2024-08-04&sr=b&scid=00000000-0000-0000-0000-000000000000&skoid=bbd22fc4-f881-4ea4-b2f3-c12033cf6a8b&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2025-05-19T15%3A44%3A11Z&ske=2025-05-20T15%3A44%3A11Z&sks=b&skv=2024-08-04&sig=oFosQgXks4EC1%2BiPAnDPIpqkmyM8BuqiavqtLLtiXec%3D',
+      height: double.infinity,
+      width: double.infinity,
+      fit:BoxFit.cover,
+    ),
+
+      bottomNavigationBar: CurvedNavigationBar(items: items,
+      animationCurve: Curves.easeInOut,
+      animationDuration: Duration(milliseconds: 300),
+      color: const Color.fromRGBO(40, 86, 155, 1),
+      buttonBackgroundColor: const Color.fromRGBO(47, 180, 242, 1),
+      height: 75,
+      backgroundColor: Colors.transparent,
+      index: index,
+      onTap: (index) => setState(() => this.index = index),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
