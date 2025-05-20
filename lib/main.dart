@@ -56,44 +56,60 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     // INFO: Navigation bar icons
-    final items = <Widget>[
-      Icon(Icons.nfc, size: 45),
-      Icon(Icons.coffee, size: 45),
-      Icon(Icons.lock, size: 45),
-      Icon(Icons.storage_sharp, size: 45),
-      Icon(Icons.face, size: 45),
+    final icons = [
+      Icons.nfc,
+      Icons.coffee,
+      Icons.lock,
+      Icons.storage_sharp,
+      Icons.face,
     ];
 
-    return Scaffold(
-      extendBody:
-          true, // INFO: Allows body to render behind the navbar (useful for transparency effects)
-      backgroundColor: Colors.red, // INFO: Background color of the whole screen
-      appBar: AppBar(
-        title: Text('INFINITY BR LOCKERS'),
-        elevation: 0,
-        centerTitle: true,
-      ),
-      body:
-          screens[index], // INFO: Displays the current screen based on selected index
-      bottomNavigationBar: Theme(
-        data: Theme.of(context).copyWith(
-          iconTheme: IconThemeData(color: const Color.fromRGBO(40, 86, 155, 1)),
+    final items =
+        icons
+            .map(
+              (icon) => Padding(
+                padding: EdgeInsets.all(6.0),
+                child: Icon(icon, size: 45),
+              ),
+            )
+            .toList();
+
+    return SafeArea(
+      top: false,
+      child: Scaffold(
+        extendBody:
+            true, // INFO: Allows body to render behind the navbar (useful for transparency effects)
+        backgroundColor:
+            Colors.red, // INFO: Background color of the whole screen
+        appBar: AppBar(
+          title: Text('INFINITY BR LOCKERS'),
+          elevation: 0,
+          centerTitle: true,
         ),
-        child: CurvedNavigationBar(
-          key: navigationKey,
-          items: items,
-          animationCurve: Curves.easeInOut,
-          animationDuration: Duration(milliseconds: 300),
-          // INFO: Bar color
-          color: const Color.fromRGBO(47, 180, 242, 1),
-          // INFO: Background of the selected button
-          buttonBackgroundColor: const Color.fromARGB(255, 255, 255, 255),
-          height: 75,
-          backgroundColor:
-              Colors.transparent, // INFO: Makes the background see-through
-          index: index,
-          // INFO: Updates UI on tab switch
-          onTap: (index) => setState(() => this.index = index),
+        body:
+            screens[index], // INFO: Displays the current screen based on selected index
+        bottomNavigationBar: Theme(
+          data: Theme.of(context).copyWith(
+            iconTheme: IconThemeData(
+              color: const Color.fromRGBO(40, 86, 155, 1),
+            ),
+          ),
+          child: CurvedNavigationBar(
+            key: navigationKey,
+            items: items,
+            animationCurve: Curves.easeInOut,
+            animationDuration: Duration(milliseconds: 300),
+            // INFO: Bar color
+            color: const Color.fromRGBO(47, 180, 242, 1),
+            // INFO: Background of the selected button
+            buttonBackgroundColor: const Color.fromARGB(255, 255, 255, 255),
+            height: 65,
+            backgroundColor:
+                Colors.transparent, // INFO: Makes the background see-through
+            index: index,
+            // INFO: Updates UI on tab switch
+            onTap: (index) => setState(() => this.index = index),
+          ),
         ),
       ),
     );
