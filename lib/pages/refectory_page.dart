@@ -1,14 +1,24 @@
 import 'package:flutter/material.dart';
 
-class RefectoryPage extends StatelessWidget {
+class RefeitorioPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.red,
-    body: Center(
-      child: Text(
-        'Refectory',
-        style: TextStyle(fontSize: 60, color: Colors.white),
-      ),
-    ),
+    body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Imagem de fundo
+            Image.asset(
+              'assets/fundo.jpg', // <- coloca o caminho certo aqui
+              fit: BoxFit.cover,
+            ),
+            // Conteúdo da tela
+            Center(
+              child: Text(
+                'Refeitório',
+                style: TextStyle(fontSize: 60, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
   );
 }

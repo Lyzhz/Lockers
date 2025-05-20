@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
+import 'package:flutter/services.dart';
+import 'package:lockers/pages/config_page.dart';
 
 // INFO: Internal Pages (screens/routes of the app)
 import 'package:lockers/pages/refectory_page.dart';
@@ -9,6 +11,8 @@ import 'package:lockers/pages/collectingdata_page.dart';
 import 'package:lockers/pages/lockers_page.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const MyApp()); // NOTE: Bootstraps the app with the root widget
 }
 
@@ -47,7 +51,7 @@ class _MyHomePageState extends State<MyHomePage> {
   // INFO: Screens corresponding to each tab in the bottom navigation
   final screens = [
     ScaPage(),
-    RefectoryPage(),
+    RefeitorioPage(),
     LockersPage(),
     CollectingDataPage(),
     FacialPage(),
@@ -64,16 +68,19 @@ class _MyHomePageState extends State<MyHomePage> {
       Icons.face,
     ];
 
-    final items =
-        icons
-            .map(
-              (icon) => Padding(
-                padding: EdgeInsets.all(6.0),
-                child: Icon(icon, size: 45),
-              ),
-            )
-            .toList();
-
+    final items = List.generate(icons.length, (i) {
+  final isSelected = i == index;
+  return Padding(
+    padding: const EdgeInsets.all(6.0),
+    child: Icon(
+      icons[i],
+      size: 45,
+      color: isSelected
+          ? const Color.fromRGBO(40, 86, 155, 1) // azul se selecionado
+          : Colors.white,                        // branco se não
+    ),
+  );
+});
     return SafeArea(
       top: false,
       child: Scaffold(
@@ -81,11 +88,26 @@ class _MyHomePageState extends State<MyHomePage> {
             true, // INFO: Allows body to render behind the navbar (useful for transparency effects)
         backgroundColor:
             Colors.red, // INFO: Background color of the whole screen
-        appBar: AppBar(
-          title: Text('INFINITY BR LOCKERS'),
-          elevation: 0,
-          centerTitle: true,
-        ),
+          appBar: AppBar(
+  backgroundColor: Colors.white,
+  elevation: 0,
+  centerTitle: true,
+  title: Padding(
+    padding: EdgeInsets.symmetric(vertical: 8),
+    child: GestureDetector(
+      onLongPress: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ConfigPage()),
+        );
+      },
+      child: Image.asset(
+        'assets/verticalduascores.png',
+        height: 40,
+        fit: BoxFit.contain,
+      ),
+    ),
+  ),
+),
         body:
             screens[index], // INFO: Displays the current screen based on selected index
         bottomNavigationBar: Theme(

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-class LockersPage extends StatelessWidget {
+class ConfigPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
-        body: Stack(
+    body: Stack(
           fit: StackFit.expand,
           children: [
             // Imagem de fundo
@@ -15,11 +15,11 @@ class LockersPage extends StatelessWidget {
             // Conteúdo da tela
             Center(
               child: Text(
-                'Lockers',
+                'Config',
                 style: TextStyle(fontSize: 60, color: Colors.white),
               ),
             ),
           ],
         ),
-      );
+  );
 }
