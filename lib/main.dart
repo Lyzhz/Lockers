@@ -97,7 +97,7 @@ class _MyHomePageState extends State<MyHomePage> {
           elevation: 0,
           centerTitle: true,
           title: Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
+            padding: EdgeInsets.only(right: 510),
             child: GestureDetector(
               onLongPress: () {
                 Navigator.of(context).push(

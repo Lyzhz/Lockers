@@ -39,6 +39,7 @@ dependencies:
   restart_app: ^1.2.1
   flutter_blue_plus: ^1.31.15
   shared_preferences: ^2.2.2
+  http: ^1.4.0
 
 dev_dependencies:
   flutter_test:
