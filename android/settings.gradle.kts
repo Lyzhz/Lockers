@@ -22,4 +22,14 @@ plugins {
     id("org.jetbrains.kotlin.android") version "1.8.22" apply false
 }
 
+rootProject.name = "lockers"
 include(":app")
+
+// Configuração para o plugin flutter_bluetooth_serial
+gradle.beforeProject {
+    if (name == "flutter_bluetooth_serial") {
+        project.extensions.findByName("android")?.withGroovyBuilder {
+            "namespace"("com.example.flutter_bluetooth_serial")
+        }
+    }
+}

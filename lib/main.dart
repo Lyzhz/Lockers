@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:lockers/pages/config_page.dart';
+import 'package:lockers/pages/dados_page.dart';
+import 'dart:io' show Platform, exit;
+import 'package:restart_app/restart_app.dart';
 
 // INFO: Internal Pages (screens/routes of the app)
 import 'package:lockers/pages/refectory_page.dart';
@@ -69,18 +72,19 @@ class _MyHomePageState extends State<MyHomePage> {
     ];
 
     final items = List.generate(icons.length, (i) {
-  final isSelected = i == index;
-  return Padding(
-    padding: const EdgeInsets.all(6.0),
-    child: Icon(
-      icons[i],
-      size: 45,
-      color: isSelected
-          ? const Color.fromRGBO(40, 86, 155, 1) // azul se selecionado
-          : Colors.white,                        // branco se não
-    ),
-  );
-});
+      final isSelected = i == index;
+      return Padding(
+        padding: const EdgeInsets.all(6.0),
+        child: Icon(
+          icons[i],
+          size: 45,
+          color:
+              isSelected
+                  ? const Color.fromRGBO(40, 86, 155, 1) // azul se selecionado
+                  : Colors.white, // branco se não
+        ),
+      );
+    });
     return SafeArea(
       top: false,
       child: Scaffold(
@@ -88,26 +92,51 @@ class _MyHomePageState extends State<MyHomePage> {
             true, // INFO: Allows body to render behind the navbar (useful for transparency effects)
         backgroundColor:
             Colors.red, // INFO: Background color of the whole screen
-          appBar: AppBar(
-  backgroundColor: Colors.white,
-  elevation: 0,
-  centerTitle: true,
-  title: Padding(
-    padding: EdgeInsets.symmetric(vertical: 8),
-    child: GestureDetector(
-      onLongPress: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => ConfigPage()),
-        );
-      },
-      child: Image.asset(
-        'assets/verticalduascores.png',
-        height: 40,
-        fit: BoxFit.contain,
-      ),
-    ),
-  ),
-),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: true,
+          title: Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: GestureDetector(
+              onLongPress: () {
+                Navigator.of(context).push(
+                  PageRouteBuilder(
+                    pageBuilder:
+                        (context, animation, secondaryAnimation) =>
+                            ConfigPage(),
+                    transitionsBuilder: (
+                      context,
+                      animation,
+                      secondaryAnimation,
+                      child,
+                    ) {
+                      const begin = Offset(
+                        1.0,
+                        0.0,
+                      ); // Da direita para a esquerda
+                      const end = Offset.zero;
+                      final tween = Tween(
+                        begin: begin,
+                        end: end,
+                      ).chain(CurveTween(curve: Curves.easeInOut));
+                      return SlideTransition(
+                        position: animation.drive(tween),
+                        child: child,
+                      );
+                    },
+                    transitionDuration: Duration(milliseconds: 300),
+                  ),
+                );
+              },
+              child: Image.asset(
+                'assets/verticalduascores.png',
+                height: 40,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
         body:
             screens[index], // INFO: Displays the current screen based on selected index
         bottomNavigationBar: Theme(
@@ -125,7 +154,7 @@ class _MyHomePageState extends State<MyHomePage> {
             color: const Color.fromRGBO(47, 180, 242, 1),
             // INFO: Background of the selected button
             buttonBackgroundColor: const Color.fromARGB(255, 255, 255, 255),
-            height: 65,
+            height: 75,
             backgroundColor:
                 Colors.transparent, // INFO: Makes the background see-through
             index: index,
@@ -135,5 +164,27 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ),
     );
+  }
+
+  void _onNavButtonTap(int index) {
+    setState(() {
+      this.index = index;
+    });
+    if (index == 3) {
+      // Resetar Telas
+      Restart.restartApp();
+    } else if (index == 4) {
+      // Fechar App
+      if (Platform.isAndroid) {
+        SystemNavigator.pop();
+      } else {
+        exit(0);
+      }
+    } else if (index == 2) {
+      // Lógica para navegar para DadosPage
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => DadosPage()));
+    }
   }
 }
