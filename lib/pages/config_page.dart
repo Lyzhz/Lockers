@@ -6,188 +6,249 @@ import 'package:flutter/services.dart';
 import 'package:lockers/pages/dados_page.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class ConfigPage extends StatefulWidget {
+  const ConfigPage({super.key});
+
   @override
-  _ConfigPageState createState() => _ConfigPageState();
+  State<ConfigPage> createState() => _ConfigPageState();
 }
 
-class _ConfigPageState extends State<ConfigPage>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  int _selectedIndex = 0;
-  bool _isSearching = false;
-  bool _isConnected = false; // Estado da conexão Bluetooth
-  String _macAddress = ''; // Endereço MAC da placa
-  final TextEditingController _patrimonioController = TextEditingController();
-  String _deviceName = '';
-  String _deviceId = '';
-  bool _isPatrimonioLocked = false;
-  final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
-  String? _tipoLocacaoSelecionado;
-  String? _armazenarPessoasSelecionado;
-  final TextEditingController _releEmergenciaController =
-      TextEditingController();
-  List<ScanResult> _scanResults = [];
+class _ConfigPageState extends State<ConfigPage> {
+  final TextEditingController _quantidadePortasController = TextEditingController();
+  bool _isConnected = false;
   bool _isScanning = false;
-
-  final List<String> _tiposLocacao = ['Armário', 'Vestiario', 'Box', 'Outro'];
-
-  final List<String> _opcoesArmazenarPessoas = ['Sim', 'Não'];
-
-  late SharedPreferences _prefs;
-  final TextEditingController _quantidadePortasController =
-      TextEditingController(text: '24');
+  BluetoothDevice? _connectedDevice;
+  String _macAddress = '';
+  List<bool> _releStates = List.generate(8, (index) => false);
+  BluetoothCharacteristic? _writeCharacteristic;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _getDeviceInfo();
-    _checkBluetoothState();
-    _initSharedPreferences();
+    _loadPlateConfig();
+    _checkBluetooth();
+    _checkConnectionStatus();
   }
 
-  void _initSharedPreferences() async {
-    _prefs = await SharedPreferences.getInstance();
-  }
-
-  void _savePlateConfig(String macAddress, String quantidadePortas) async {
-    await _prefs.setString('macAddress', macAddress);
-    await _prefs.setString('quantidadePortas', quantidadePortas);
-    print(
-      'Configuração da placa salva: MAC=$macAddress, Portas=$quantidadePortas',
-    );
-  }
-
-  Future<void> _getDeviceInfo() async {
+  Future<void> _checkConnectionStatus() async {
     try {
-      if (Platform.isAndroid) {
-        final androidInfo = await _deviceInfo.androidInfo;
-        setState(() {
-          _deviceName = androidInfo.serialNumber;
-          _deviceId = androidInfo.id;
-        });
-      } else if (Platform.isIOS) {
-        final iosInfo = await _deviceInfo.iosInfo;
-        setState(() {
-          _deviceName = iosInfo.name;
-          _deviceId = iosInfo.identifierForVendor ?? 'Unknown';
-        });
-      } else {
-        setState(() {
-          _deviceName = 'Unknown Device';
-          _deviceId = 'Unknown';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _deviceName = 'Unknown Device';
-        _deviceId = 'Unknown';
-      });
-    }
-  }
+      print('Verificando status da conexão...');
+      if (_macAddress.isNotEmpty) {
+        print('MAC encontrado: $_macAddress');
+        // Inicia o escaneamento
+        await FlutterBluePlus.startScan(
+          timeout: Duration(seconds: 5),
+          androidUsesFineLocation: true,
+        );
+        print('Escaneamento iniciado');
 
-  void _onPatrimonioSubmitted(String value) {
-    if (value.isNotEmpty) {
-      setState(() {
-        _isPatrimonioLocked = true;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _patrimonioController.dispose();
-    super.dispose();
-  }
-
-  void _toggleSearch() {
-    setState(() {
-      _isSearching = !_isSearching;
-    });
-    // Aqui você pode adicionar a lógica de busca no banco de dados
-    if (_isSearching) {
-      // Iniciar busca
-      print('Iniciando busca...');
-    } else {
-      // Parar busca
-      print('Parando busca...');
-    }
-  }
-
-  void _toggleConnection() async {
-    setState(() {
-      _isConnected = !_isConnected;
-      if (_isConnected) {
-        _macAddress = '00:11:22:33:44:55'; // Exemplo de MAC
-        _savePlateConfig(_macAddress, _quantidadePortasController.text);
-      } else {
-        _macAddress = '';
-      }
-    });
-  }
-
-  void _checkBluetoothState() async {
-    if (Platform.isAndroid) {
-      try {
-        if (await FlutterBluePlus.adapterState.first ==
-            BluetoothAdapterState.on) {
-          print('Bluetooth está ativado');
-        } else {
-          print('Bluetooth está desativado');
+        // Aguarda os resultados do escaneamento
+        BluetoothDevice? device;
+        await for (final results in FlutterBluePlus.scanResults) {
+          for (final result in results) {
+            print('Dispositivo encontrado: ${result.device.platformName} (${result.device.remoteId.str})');
+            if (result.device.remoteId.str == _macAddress) {
+              device = result.device;
+              print('Dispositivo correspondente encontrado');
+              break;
+            }
+          }
+          if (device != null) break;
         }
-      } catch (e) {
-        print('Erro ao verificar estado do Bluetooth: $e');
+
+        // Para o escaneamento
+        await FlutterBluePlus.stopScan();
+        print('Escaneamento parado');
+
+        if (device != null) {
+          print('Verificando estado da conexão...');
+          // Verifica o estado da conexão
+          final state = await device.connectionState.first;
+          print('Estado da conexão: $state');
+          
+          setState(() {
+            _isConnected = state == BluetoothConnectionState.connected;
+            if (_isConnected) {
+              _connectedDevice = device;
+              print('Dispositivo conectado');
+            } else {
+              _connectedDevice = null;
+              _macAddress = '';
+              _writeCharacteristic = null;
+              print('Dispositivo desconectado');
+            }
+          });
+
+          // Se estiver desconectado, tenta reconectar
+          if (!_isConnected) {
+            print('Tentando reconectar...');
+            try {
+              await device.connect(
+                timeout: Duration(seconds: 10),
+                autoConnect: false,
+              );
+              print('Reconexão bem-sucedida');
+              setState(() {
+                _isConnected = true;
+                _connectedDevice = device;
+              });
+            } catch (e) {
+              print('Erro ao reconectar: $e');
+              setState(() {
+                _isConnected = false;
+                _connectedDevice = null;
+                _macAddress = '';
+                _writeCharacteristic = null;
+              });
+            }
+          }
+        } else {
+          print('Dispositivo não encontrado');
+          // Dispositivo não encontrado
+          setState(() {
+            _isConnected = false;
+            _connectedDevice = null;
+            _macAddress = '';
+            _writeCharacteristic = null;
+          });
+        }
+      } else {
+        print('Nenhum MAC encontrado');
       }
-    }
-  }
-
-  void _startDiscovery() async {
-    setState(() {
-      _scanResults = [];
-      _isScanning = true;
-    });
-
-    // Mostrar o popup imediatamente ao iniciar a busca
-    _showDiscoveryResults();
-
-    try {
-      await FlutterBluePlus.startScan(timeout: Duration(seconds: 4));
-      FlutterBluePlus.scanResults.listen((results) {
-        setState(() {
-          _scanResults = results;
-        });
-      });
     } catch (e) {
-      print('Erro ao iniciar escaneamento: $e');
-    }
-  }
-
-  void _stopDiscovery() async {
-    try {
-      await FlutterBluePlus.stopScan();
+      print('Erro ao verificar status da conexão: $e');
       setState(() {
-        _isScanning = false;
+        _isConnected = false;
+        _connectedDevice = null;
+        _macAddress = '';
+        _writeCharacteristic = null;
       });
-    } catch (e) {
-      print('Erro ao parar escaneamento: $e');
     }
   }
 
-  void _showDiscoveryResults() {
+  Future<void> _checkBluetooth() async {
+    try {
+      // Solicita permissões necessárias
+      Map<Permission, PermissionStatus> statuses = await [
+        Permission.bluetooth,
+        Permission.bluetoothConnect,
+        Permission.bluetoothScan,
+        Permission.location,
+      ].request();
+
+      bool allGranted = true;
+      statuses.forEach((permission, status) {
+        if (!status.isGranted) {
+          allGranted = false;
+        }
+      });
+
+      if (!allGranted) {
+        print('Permissões necessárias não foram concedidas');
+        setState(() {
+          _isConnected = false;
+          _connectedDevice = null;
+          _macAddress = '';
+          _writeCharacteristic = null;
+        });
+        return;
+      }
+
+      // Verifica se o Bluetooth está disponível
+      final isAvailable = await FlutterBluePlus.isAvailable;
+      if (isAvailable == false) {
+        print('Bluetooth não está disponível neste dispositivo');
+        setState(() {
+          _isConnected = false;
+          _connectedDevice = null;
+          _macAddress = '';
+          _writeCharacteristic = null;
+        });
+        return;
+      }
+
+      // Verifica se o Bluetooth está ativado
+      final state = await FlutterBluePlus.adapterState.first;
+      if (state == BluetoothAdapterState.on) {
+        print('Bluetooth está ativado');
+        // Verifica o status da conexão após ativar o Bluetooth
+        _checkConnectionStatus();
+      } else {
+        print('Bluetooth está desativado');
+        setState(() {
+          _isConnected = false;
+          _connectedDevice = null;
+          _macAddress = '';
+          _writeCharacteristic = null;
+        });
+        // Solicita ao usuário para ativar o Bluetooth
+        await FlutterBluePlus.turnOn();
+      }
+    } catch (e) {
+      print('Erro ao verificar Bluetooth: $e');
+      setState(() {
+        _isConnected = false;
+        _connectedDevice = null;
+        _macAddress = '';
+        _writeCharacteristic = null;
+      });
+    }
+  }
+
+  Future<void> _loadPlateConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final macAddress = prefs.getString('mac_address') ?? '';
+      final quantidadePortas = prefs.getString('quantidade_portas') ?? '';
+      final isConnected = prefs.getBool('is_connected') ?? false;
+
+      setState(() {
+        _macAddress = macAddress;
+        _quantidadePortasController.text = quantidadePortas;
+        _isConnected = isConnected;
+      });
+
+      // Se houver um MAC salvo, verifica o status da conexão
+      if (macAddress.isNotEmpty) {
+        _checkConnectionStatus();
+      }
+    } catch (e) {
+      print('Erro ao carregar configurações: $e');
+      setState(() {
+        _isConnected = false;
+        _connectedDevice = null;
+        _macAddress = '';
+        _writeCharacteristic = null;
+      });
+    }
+  }
+
+  Future<void> _savePlateConfig(String macAddress, String quantidadePortas) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('mac_address', macAddress);
+      await prefs.setString('quantidade_portas', quantidadePortas);
+      await prefs.setBool('is_connected', _isConnected);
+    } catch (e) {
+      print('Erro ao salvar configurações: $e');
+    }
+  }
+
+  void _showPairedDevices() {
+    // Inicia o escaneamento
+    FlutterBluePlus.startScan(
+      timeout: Duration(seconds: 10),
+      androidUsesFineLocation: true,
+    );
+
     showDialog(
       context: context,
-      barrierDismissible:
-          false, // Impede que o usuário feche o diálogo clicando fora
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return StatefulBuilder(
-          // Permite atualizar o estado do diálogo
-          builder: (context, setState) {
+          builder: (context, setDialogState) {
             return Dialog(
               backgroundColor: Colors.white.withOpacity(0.95),
               shape: RoundedRectangleBorder(
@@ -204,7 +265,7 @@ class _ConfigPageState extends State<ConfigPage>
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Procurando Dispositivos...',
+                          'Dispositivos Bluetooth',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -214,7 +275,7 @@ class _ConfigPageState extends State<ConfigPage>
                         IconButton(
                           icon: Icon(Icons.close, color: Colors.red),
                           onPressed: () {
-                            _stopDiscovery(); // Para a busca ao fechar
+                            FlutterBluePlus.stopScan();
                             Navigator.of(context).pop();
                           },
                         ),
@@ -222,35 +283,49 @@ class _ConfigPageState extends State<ConfigPage>
                     ),
                     SizedBox(height: 10),
                     Divider(),
-                    _scanResults.isEmpty
-                        ? Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Center(
-                            child: Column(
-                              children: [
-                                CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Color.fromRGBO(47, 180, 242, 1),
-                                  ),
-                                ),
-                                SizedBox(height: 16),
-                                Text(
-                                  'Procurando dispositivos próximos...',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
+                    StreamBuilder<List<ScanResult>>(
+                      stream: FlutterBluePlus.scanResults,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return Center(
+                            child: CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Color.fromRGBO(47, 180, 242, 1),
+                              ),
                             ),
-                          ),
-                        )
-                        : Expanded(
+                          );
+                        }
+
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              'Erro ao carregar dispositivos',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          );
+                        }
+
+                        final devices = snapshot.data?.map((result) => result.device).toList() ?? [];
+                        
+                        if (devices.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'Nenhum dispositivo encontrado.\nCertifique-se que o Bluetooth está ativado.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return Expanded(
                           child: ListView.builder(
                             shrinkWrap: true,
-                            itemCount: _scanResults.length,
+                            itemCount: devices.length,
                             itemBuilder: (context, index) {
-                              final result = _scanResults[index];
+                              final device = devices[index];
                               return Card(
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -259,31 +334,38 @@ class _ConfigPageState extends State<ConfigPage>
                                 margin: EdgeInsets.symmetric(vertical: 6),
                                 child: ListTile(
                                   leading: Icon(
-                                    Icons.bluetooth,
+                                    Icons.bluetooth_connected,
                                     color: Color.fromRGBO(47, 180, 242, 1),
                                   ),
                                   title: Text(
-                                    result.device.platformName.isEmpty
+                                    device.platformName.isEmpty
                                         ? 'Dispositivo Desconhecido'
-                                        : result.device.platformName,
+                                        : device.platformName,
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  subtitle: Text(result.device.remoteId.str),
-                                  onTap: () {
-                                    print(
-                                      'Dispositivo selecionado: ${result.device.remoteId.str}',
-                                    );
-                                    _stopDiscovery(); // Para a busca ao selecionar
-                                    Navigator.of(context).pop();
-                                    // TODO: Implementar a lógica de conexão real aqui
+                                  subtitle: Text(device.remoteId.str),
+                                  onTap: () async {
+                                    try {
+                                      await _connectToDevice(device);
+                                    } catch (e) {
+                                      // Mostra mensagem de erro
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Erro ao conectar: ${e.toString()}'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
                                   },
                                 ),
                               );
                             },
                           ),
-                        ),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -294,708 +376,345 @@ class _ConfigPageState extends State<ConfigPage>
     );
   }
 
-  void _onNavButtonTap(int index) {
-    if (index == 0) {
-      if (_isSearching) {
-        _toggleSearch();
-      }
-    } else if (index == 3) {
-      // Resetar Telas
-      Restart.restartApp();
-    } else if (index == 4) {
-      // Fechar App
-      if (Platform.isAndroid) {
-        SystemNavigator.pop();
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    try {
+      print('Iniciando conexão com dispositivo: ${device.platformName} (${device.remoteId.str})');
+      
+      // Mostra indicador de carregamento
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Color.fromRGBO(47, 180, 242, 1),
+                  ),
+                ),
+                SizedBox(width: 20),
+                Text('Conectando...'),
+              ],
+            ),
+          );
+        },
+      );
+
+      // Para o escaneamento antes de conectar
+      await FlutterBluePlus.stopScan();
+      print('Escaneamento parado');
+
+      // Tenta conectar ao dispositivo
+      print('Tentando conectar...');
+      await device.connect(
+        timeout: Duration(seconds: 10),
+        autoConnect: false,
+      );
+      print('Conexão estabelecida');
+      
+      // Fecha o diálogo de carregamento
+      Navigator.of(context).pop();
+
+      // Verifica se a conexão foi estabelecida
+      final state = await device.connectionState.first;
+      print('Estado da conexão: $state');
+      
+      if (state == BluetoothConnectionState.connected) {
+        print('Dispositivo conectado, descobrindo serviços...');
+        // Descobre os serviços
+        List<BluetoothService> services = await device.discoverServices();
+        print('Serviços descobertos: ${services.length}');
+        
+        // Procura o serviço e característica corretos
+        for (var service in services) {
+          print('Verificando serviço: ${service.uuid}');
+          for (var characteristic in service.characteristics) {
+            print('Verificando característica: ${characteristic.uuid}');
+            if (characteristic.properties.write) {
+              _writeCharacteristic = characteristic;
+              print('Característica de escrita encontrada: ${characteristic.uuid}');
+              break;
+            }
+          }
+          if (_writeCharacteristic != null) break;
+        }
+
+        if (_writeCharacteristic == null) {
+          throw Exception('Característica de escrita não encontrada');
+        }
+
+        // Salva o dispositivo conectado
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('connected_device', device.remoteId.str);
+        await prefs.setString('device_name', device.platformName);
+        await prefs.setBool('is_connected', true);
+        print('Configurações salvas');
+
+        // Atualiza o estado
+        setState(() {
+          _connectedDevice = device;
+          _isConnected = true;
+          _macAddress = device.remoteId.str;
+        });
+        print('Estado atualizado');
+
+        // Mostra mensagem de sucesso
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Conectado com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Configura reconexão automática
+        device.connectionState.listen((BluetoothConnectionState state) async {
+          print('Estado da conexão alterado: $state');
+          if (state == BluetoothConnectionState.disconnected) {
+            print('Dispositivo desconectado, tentando reconectar...');
+            try {
+              await device.connect(
+                timeout: Duration(seconds: 10),
+                autoConnect: false,
+              );
+              print('Reconexão bem-sucedida');
+            } catch (e) {
+              print('Erro ao reconectar: $e');
+              setState(() {
+                _isConnected = false;
+                _macAddress = '';
+                _writeCharacteristic = null;
+              });
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('is_connected', false);
+            }
+          }
+        });
       } else {
-        exit(0);
+        throw Exception('Falha ao conectar');
       }
-    } else if (index == 2) {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => DadosPage()));
+    } catch (e) {
+      print('Erro durante a conexão: $e');
+      // Fecha o diálogo de carregamento se estiver aberto
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      // Mostra mensagem de erro
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao conectar: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+
+      // Limpa o estado
+      setState(() {
+        _isConnected = false;
+        _connectedDevice = null;
+        _macAddress = '';
+        _writeCharacteristic = null;
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('is_connected', false);
+    }
+  }
+
+  Future<void> _toggleRele(int index) async {
+    if (_writeCharacteristic == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Dispositivo não está conectado'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Atualiza o estado do relé
+      setState(() {
+        _releStates[index] = !_releStates[index];
+      });
+
+      // Prepara o comando para a placa
+      // Formato: 'p' + número do relé (01-08)
+      String command = 'p${(index + 1).toString().padLeft(2, '0')}';
+      
+      // Envia o comando para a placa
+      await _writeCharacteristic!.write(command.codeUnits);
+
+      // Mostra feedback
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Relé ${index + 1} ${_releStates[index] ? 'ativado' : 'desativado'}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // Reverte o estado em caso de erro
+      setState(() {
+        _releStates[index] = !_releStates[index];
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao controlar relé: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Widget _buildReleButton(int index) {
+    return ElevatedButton(
+      onPressed: _isConnected ? () => _toggleRele(index) : null,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _releStates[index] ? Colors.green : Colors.red,
+        foregroundColor: Colors.white,
+        padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+      child: Text(
+        'Relé ${index + 1}\n${_releStates[index] ? 'ON' : 'OFF'}',
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  void _stopDiscovery() {
+    try {
+      FlutterBluePlus.stopScan();
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+      }
+    } catch (e) {
+      print('Erro ao parar escaneamento: $e');
     }
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      centerTitle: true,
-      title: Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Image.asset(
-          'assets/verticalduascores.png',
-          height: 40,
-          fit: BoxFit.contain,
-        ),
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Configurações'),
+        backgroundColor: Color.fromRGBO(47, 180, 242, 1),
       ),
-    ),
-    body: Stack(
-      fit: StackFit.expand,
-      children: [
-        // Imagem de fundo
-        Image.asset('assets/fundo.jpg', fit: BoxFit.cover),
-        // Conteúdo da tela
-        Padding(
-          padding: const EdgeInsets.only(top: 0.0),
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(15),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          spreadRadius: 2,
-                          blurRadius: 5,
-                          offset: Offset(0, 3),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Configurações da Placa',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color.fromRGBO(47, 180, 242, 1),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    TextField(
+                      controller: _quantidadePortasController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Quantidade de Portas',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.door_front_door),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _isConnected ? null : _showPairedDevices,
+                      icon: Icon(Icons.bluetooth),
+                      label: Text(_isConnected ? 'Conectado' : 'Conectar Dispositivo'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isConnected ? Colors.green : Color.fromRGBO(47, 180, 242, 1),
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ],
+                      ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [_buildStatusAndConnect(), _buildMacAddress()],
-                    ),
-                  ),
-                  SizedBox(height: 20),
-                  _buildPreferenciasContainer(),
-                  SizedBox(height: 20),
-                  _buildLocacaoContainer(),
-                  SizedBox(height: 20),
-                  _buildNivelAcessoContainer(),
-                  SizedBox(height: 20),
-                  _buildPortasContainer(),
-                  SizedBox(height: 20),
-                  _buildTokenContainer(),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-    bottomNavigationBar: Container(
-      height: 80,
-      decoration: BoxDecoration(
-        color: const Color.fromRGBO(47, 180, 242, 1).withOpacity(0.9),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            spreadRadius: 1,
-            blurRadius: 5,
-            offset: Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildSearchButton(),
-          _buildNavButton(Icons.storage, 2, 'Dados'),
-          _buildNavButton(Icons.screen_lock_landscape, 3, 'Resetar Telas'),
-          _buildNavButton(Icons.close, 4, 'Fechar App'),
-        ],
-      ),
-    ),
-  );
-
-  Widget _buildSearchButton() {
-    return GestureDetector(
-      onTap: _toggleSearch,
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 300),
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color:
-              _isSearching ? Colors.red : const Color.fromRGBO(47, 180, 242, 1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _isSearching ? Icons.stop : Icons.search,
-              color: Colors.white,
-              size: 24,
-            ),
-            SizedBox(width: 8),
-            AnimatedSwitcher(
-              duration: Duration(milliseconds: 300),
-              child: Text(
-                _isSearching ? 'Parar Busca' : 'Buscar',
-                key: ValueKey<bool>(_isSearching),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavButton(IconData icon, int index, String label) {
-    return GestureDetector(
-      onTap: () => _onNavButtonTap(index),
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 300),
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.white, size: 24),
-            SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusAndConnect() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Row(
-          children: [
-            Text(
-              'Status: ',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(width: 10),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color:
-                    _isConnected
-                        ? Colors.green.withOpacity(0.2)
-                        : Colors.red.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: _isConnected ? Colors.green : Colors.red,
-                  width: 2,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedContainer(
-                    duration: Duration(milliseconds: 300),
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: _isConnected ? Colors.green : Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    _isConnected ? 'Conectado' : 'Desconectado',
-                    style: TextStyle(
-                      color: _isConnected ? Colors.green : Colors.red,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        ElevatedButton.icon(
-          onPressed: _isScanning ? _stopDiscovery : _startDiscovery,
-          style: ElevatedButton.styleFrom(
-            backgroundColor:
-                _isScanning
-                    ? Colors.orange
-                    : const Color.fromRGBO(47, 180, 242, 1),
-            foregroundColor: Colors.white,
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            elevation: 3,
-          ),
-          icon: Icon(_isScanning ? Icons.stop : Icons.bluetooth),
-          label: Text(
-            _isScanning ? 'Parar Escaneamento' : 'Procurar Dispositivos',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMacAddress() {
-    if (!_isConnected) return SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 10.0),
-      child: Row(
-        children: [
-          Text(
-            'MAC da Controladora: ',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          Text(
-            _macAddress,
-            style: TextStyle(
-              fontSize: 24,
-              color: Colors.green,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPreferenciasContainer() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            spreadRadius: 2,
-            blurRadius: 5,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Tablet',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 20),
-          _buildInfoRow('Nome:', _deviceName),
-          SizedBox(height: 10),
-          Row(
-            children: [
-              Text(
-                'Patrimônio:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(width: 10),
-              Expanded(
-                child:
-                    _isPatrimonioLocked
-                        ? Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 15,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            _patrimonioController.text,
-                            style: TextStyle(fontSize: 18),
-                          ),
-                        )
-                        : TextField(
-                          controller: _patrimonioController,
-                          decoration: InputDecoration(
-                            hintText: 'Digite o patrimônio',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 15,
-                              vertical: 10,
-                            ),
-                          ),
-                          style: TextStyle(fontSize: 18),
-                          onSubmitted: _onPatrimonioSubmitted,
+                    if (_isConnected) ...[
+                      SizedBox(height: 8),
+                      Text(
+                        'Dispositivo: ${_connectedDevice?.platformName ?? 'Desconhecido'}',
+                        style: TextStyle(color: Colors.green),
+                      ),
+                      Text(
+                        'MAC: $_macAddress',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Controle de Relés',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color.fromRGBO(47, 180, 242, 1),
                         ),
-              ),
-            ],
-          ),
-          SizedBox(height: 10),
-          _buildInfoRow('Device ID:', _deviceId),
-          SizedBox(height: 10),
-          Row(
-            children: [
-              Text(
-                'Quantidade de Portas:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _quantidadePortasController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: 'Portas',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 15,
-                      vertical: 10,
-                    ),
-                  ),
-                  style: TextStyle(fontSize: 18),
+                      ),
+                      SizedBox(height: 8),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: NeverScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                          childAspectRatio: 1.5,
+                        ),
+                        itemCount: 8,
+                        itemBuilder: (context, index) => _buildReleButton(index),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Row(
-      children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => DadosPage()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color.fromRGBO(47, 180, 242, 1),
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Text('Ir para Dados'),
+            ),
+          ],
         ),
-        SizedBox(width: 10),
-        Text(value, style: TextStyle(fontSize: 18)),
-      ],
-    );
-  }
-
-  Widget _buildNivelAcessoContainer() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(20),
-      margin: EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            spreadRadius: 2,
-            blurRadius: 5,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Nível Acesso:',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Id Nível de Acesso:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 5),
-                    TextField(
-                      decoration: InputDecoration(border: OutlineInputBorder()),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Nome Nível de Acesso:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 5),
-                    TextField(
-                      decoration: InputDecoration(border: OutlineInputBorder()),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildPortasContainer() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(20),
-      margin: EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            spreadRadius: 2,
-            blurRadius: 5,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Portas:',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ID Site:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 5),
-                    TextField(
-                      decoration: InputDecoration(border: OutlineInputBorder()),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ID Porta:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 5),
-                    TextField(
-                      decoration: InputDecoration(border: OutlineInputBorder()),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTokenContainer() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(20),
-      margin: EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            spreadRadius: 2,
-            blurRadius: 5,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Token:',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Nome:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 5),
-                    TextField(
-                      decoration: InputDecoration(border: OutlineInputBorder()),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLocacaoContainer() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(12),
-      margin: EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        children: [
-          // Tipo de Locação
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Tipo de Locação:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 5),
-                DropdownButtonFormField<String>(
-                  value: _tipoLocacaoSelecionado,
-                  items:
-                      _tiposLocacao
-                          .map(
-                            (tipo) => DropdownMenuItem(
-                              value: tipo,
-                              child: Text(tipo),
-                            ),
-                          )
-                          .toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _tipoLocacaoSelecionado = value;
-                    });
-                  },
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                  ),
-                  hint: Text('add items..'),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: 12),
-          // Ativar o Armazenar Pessoas?
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Ativar o Armazenar Pessoas?',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 5),
-                DropdownButtonFormField<String>(
-                  value: _armazenarPessoasSelecionado,
-                  items:
-                      _opcoesArmazenarPessoas
-                          .map(
-                            (opcao) => DropdownMenuItem(
-                              value: opcao,
-                              child: Text(opcao),
-                            ),
-                          )
-                          .toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _armazenarPessoasSelecionado = value;
-                    });
-                  },
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                  ),
-                  hint: Text('add items..'),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: 12),
-          // Relé de emergência
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Relé de emergência',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 5),
-                TextField(
-                  controller: _releEmergenciaController,
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+  @override
+  void dispose() {
+    _quantidadePortasController.dispose();
+    super.dispose();
   }
 }
