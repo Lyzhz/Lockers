@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 // import 'package:path/path.dart'; // Comentado temporariamente
 
 class DadosPage extends StatefulWidget {
+  const DadosPage({Key? key}) : super(key: key);
   @override
   _DadosPageState createState() => _DadosPageState();
 }
@@ -99,7 +100,7 @@ class _DadosPageState extends State<DadosPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 class RefeitorioPage extends StatelessWidget {
+  const RefeitorioPage({Key? key}) : super(key: key);
   @override
   Widget build(BuildContext context) => Scaffold(
     body: Stack(
