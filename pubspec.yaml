@@ -38,7 +38,7 @@ dependencies:
   device_info_plus: ^9.1.1
   restart_app: ^1.1.0
   shared_preferences: ^2.2.2
-  permission_handler: ^11.1.0
+  permission_handler: ^11.3.0
   flutter_reactive_ble: ^5.3.1
   http: ^1.2.0
 
