@@ -1,265 +1,129 @@
 import 'dart:async';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class BLEService {
-  static final BLEService _instance = BLEService._internal();
-  factory BLEService() => _instance;
-  BLEService._internal();
-
   final FlutterReactiveBle _ble = FlutterReactiveBle();
-  StreamSubscription<DiscoveredDevice>? _scanSubscription;
-  StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
-  QualifiedCharacteristic? _characteristic;
-  DiscoveredDevice? _device;
-  bool _isConnected = false;
-  bool _isScanning = false;
-  final List<DiscoveredDevice> _discoveredDevices = [];
-
-  final _connectionStateController = StreamController<bool>.broadcast();
+  final _connectionController = StreamController<bool>.broadcast();
+  final _receivedDataController = StreamController<String>.broadcast();
   final _devicesController = StreamController<List<DiscoveredDevice>>.broadcast();
 
-  Stream<bool> get connectionState => _connectionStateController.stream;
+  Stream<bool> get connectionState => _connectionController.stream;
+  Stream<String> get receivedData => _receivedDataController.stream;
   Stream<List<DiscoveredDevice>> get discoveredDevices => _devicesController.stream;
 
-  final String _serviceUUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
-  final String _characteristicUUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
+  final Uuid _serviceUuid = Uuid.parse("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+  final Uuid _notifyUuid = Uuid.parse("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
+  final Uuid _writeUuid = Uuid.parse("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
 
-  bool get isConnected => _isConnected;
-  bool get isScanning => _isScanning;
-  DiscoveredDevice? get device => _device;
-  List<DiscoveredDevice> get currentDevices => _discoveredDevices;
+  StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
+  StreamSubscription<List<int>>? _notifySubscription;
+  QualifiedCharacteristic? _writeCharacteristic;
 
-  // Inicializa permissões BLE
+  bool _isConnected = false;
+
   Future<void> initialize() async {
-    print('🔧 Inicializando BLE...');
-    try {
-      final statuses = <PermissionStatus>[];
+    await Permission.bluetooth.request();
+    await Permission.bluetoothConnect.request();
+    await Permission.bluetoothScan.request();
+    await Permission.location.request();
 
-statuses.add(await Permission.bluetooth.request());
-statuses.add(await Permission.bluetoothScan.request());
-statuses.add(await Permission.bluetoothConnect.request());
-statuses.add(await Permission.location.request());
+    if (!(await Permission.bluetooth.isGranted)) {
+      throw Exception('Permissões Bluetooth não concedidas.');
+    }
 
-      if (statuses.any((s) => s.isDenied)) {
-        print('🚫 Permissões negadas: não é possível prosseguir.');
-        return;
+    print('✅ Permissões BLE OK!');
+  }
+
+  Future<List<DiscoveredDevice>> scanForDevices({Duration timeout = const Duration(seconds: 5)}) async {
+    final List<DiscoveredDevice> foundDevices = [];
+    final subscription = _ble.scanForDevices(withServices: []).listen((device) {
+      if (!foundDevices.any((d) => d.id == device.id)) {
+        foundDevices.add(device);
+        _devicesController.add(List<DiscoveredDevice>.from(foundDevices));
       }
+    });
 
-      print('✅ Permissões concedidas. BLE pronto para uso.');
-    } catch (e) {
-      print('💥 Erro na inicialização do BLE: $e');
-    }
-  }
-
-  Future<void> startScan() async {
-    print('🔍 Iniciando escaneamento BLE...');
-    if (_isScanning) {
-      print('⚠️ Já está escaneando.');
-      return;
-    }
-
-    _isScanning = true;
-    _scanSubscription?.cancel();
-    _discoveredDevices.clear();
-    _devicesController.add(_discoveredDevices);
-
-    try {
-      _scanSubscription = _ble.scanForDevices(
-        withServices: [], // Pode filtrar por serviço se quiser
-        scanMode: ScanMode.lowLatency,
-      ).listen((device) {
-        if (!_discoveredDevices.any((d) => d.id == device.id)) {
-          _discoveredDevices.add(device);
-          _devicesController.add(_discoveredDevices);
-          print('📡 Dispositivo encontrado: ${device.name} (${device.id})');
-        }
-      }, onError: (error) {
-        print('💥 Erro ao escanear: $error');
-        _isScanning = false;
-      });
-
-      Future.delayed(const Duration(seconds: 5), stopScan);
-    } catch (e) {
-      print('💥 Exceção no escaneamento: $e');
-      _isScanning = false;
-    }
-  }
-
-  void stopScan() {
-    if (!_isScanning) return;
-    print('🛑 Parando escaneamento...');
-    _scanSubscription?.cancel();
-    _isScanning = false;
+    await Future.delayed(timeout);
+    await subscription.cancel();
+    return foundDevices;
   }
 
   Future<void> connectToDevice(DiscoveredDevice device) async {
-    print('🔗 Conectando ao dispositivo: ${device.name} (${device.id})');
-    if (_isConnected) {
-      print('⚠️ Já está conectado.');
-      return;
-    }
+    disconnect();
+    print('🔗 Conectando a ${device.name}...');
 
-    _device = device;
-    _connectionSubscription?.cancel();
-
-    try {
-      _connectionSubscription = _ble
-          .connectToDevice(
-            id: device.id,
-            connectionTimeout: const Duration(seconds: 20),
-          )
-          .listen(_handleConnectionUpdate, onError: _handleConnectionError);
-    } catch (e) {
-      _handleConnectionError(e);
-    }
-  }
-
-  Future<void> connectToDeviceId(String deviceId) async {
-    print('🔗 Conectando via ID: $deviceId');
-    if (_isConnected) {
-      print('⚠️ Já está conectado.');
-      return;
-    }
-
-    _connectionSubscription?.cancel();
-
-    try {
-      _connectionSubscription = _ble
-          .connectToDevice(
-            id: deviceId,
-            connectionTimeout: const Duration(seconds: 20),
-          )
-          .listen((update) => _handleConnectionUpdate(update, idOverride: deviceId),
-              onError: _handleConnectionError);
-    } catch (e) {
-      _handleConnectionError(e);
-    }
-  }
-
-  void _handleConnectionUpdate(ConnectionStateUpdate update, {String? idOverride}) {
-    switch (update.connectionState) {
-      case DeviceConnectionState.connected:
-        print('✅ Dispositivo conectado.');
+    _connectionSubscription = _ble.connectToDevice(
+      id: device.id,
+      servicesWithCharacteristicsToDiscover: {
+        _serviceUuid: [_notifyUuid, _writeUuid],
+      },
+    ).listen((update) {
+      print('📶 Estado: ${update.connectionState}');
+      if (update.connectionState == DeviceConnectionState.connected) {
         _isConnected = true;
-        _connectionStateController.add(true);
-        _discoverServices(deviceId: idOverride ?? _device!.id);
-        _saveLastConnectedDeviceId(idOverride ?? _device!.id);
-        break;
-      case DeviceConnectionState.disconnected:
-        print('🔌 Dispositivo desconectado.');
-        _resetConnectionState();
-        // Reconecta automático
-        if (idOverride != null) {
-          Future.delayed(const Duration(seconds: 2), () {
-            connectToDeviceId(idOverride);
-          });
-        } else if (_device != null) {
-          Future.delayed(const Duration(seconds: 2), () {
-            connectToDevice(_device!);
-          });
-        }
-        break;
-      default:
-        print('🔄 Estado da conexão: ${update.connectionState}');
-    }
-  }
+        _connectionController.add(true);
 
-  void _handleConnectionError(Object error) {
-    print('💥 Erro de conexão: $error');
-    _resetConnectionState();
-  }
+        _writeCharacteristic = QualifiedCharacteristic(
+          serviceId: _serviceUuid,
+          characteristicId: _writeUuid,
+          deviceId: device.id,
+        );
 
-  void _resetConnectionState() {
-    _isConnected = false;
-    _connectionStateController.add(false);
-    _device = null;
-    _characteristic = null;
-  }
+        final notifyCharacteristic = QualifiedCharacteristic(
+          serviceId: _serviceUuid,
+          characteristicId: _notifyUuid,
+          deviceId: device.id,
+        );
 
-  Future<void> disconnect() async {
-    print('🔌 Desconectando...');
-    if (_device == null || !_isConnected) {
-      print('⚠️ Nenhum dispositivo para desconectar.');
-      return;
-    }
+        _notifySubscription = _ble.subscribeToCharacteristic(notifyCharacteristic).listen(
+  (data) {
+    final value = String.fromCharCodes(data);
+    final hex = data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+    print('🔔 RAW: $data');
+    print('🔔 ASCII: $value');
+    print('🔔 HEX: $hex');
 
-    await _connectionSubscription?.cancel();
-    _resetConnectionState();
-  }
+    _receivedDataController.add(value);
+  },
+  onError: (e) {
+    print('❌ Erro ao receber notificação: $e');
+  },
+);
 
-  Future<void> _discoverServices({String? deviceId}) async {
-    final id = deviceId ?? _device?.id;
-    if (id == null) {
-      print('❌ Sem dispositivo conectado para descoberta de serviço.');
-      return;
-    }
-
-    try {
-      print('🔎 Descobrindo serviços de $id...');
-      final services = await _ble.discoverServices(id);
-
-      final service = services.firstWhere(
-        (s) => s.serviceId.toString().toUpperCase() == _serviceUUID.toUpperCase(),
-        orElse: () => throw Exception('Serviço não encontrado'),
-      );
-
-      final char = service.characteristics.firstWhere(
-        (c) => c.characteristicId.toString().toUpperCase() == _characteristicUUID.toUpperCase(),
-        orElse: () => throw Exception('Característica não encontrada'),
-      );
-
-      if (!char.isWritableWithResponse && !char.isWritableWithoutResponse) {
-        throw Exception('Característica não é writable');
+      } else if (update.connectionState == DeviceConnectionState.disconnected) {
+        _isConnected = false;
+        _connectionController.add(false);
+        print('🔌 Dispositivo desconectado');
+        _notifySubscription?.cancel();
       }
+    }, onError: (e) {
+      print('❌ Erro na conexão: $e');
+      _connectionController.add(false);
+    });
+  }
 
-      _characteristic = QualifiedCharacteristic(
-        serviceId: service.serviceId,
-        characteristicId: char.characteristicId,
-        deviceId: id,
-      );
-      print('✅ Característica configurada com sucesso!');
-    } catch (e) {
-      print('💥 Falha na descoberta de serviços: $e');
-      _characteristic = null;
+  void sendCommand(String command) {
+    if (_isConnected && _writeCharacteristic != null) {
+      final data = command.codeUnits;
+      _ble.writeCharacteristicWithResponse(_writeCharacteristic!, value: data);
+      print('📤 Enviado: $command');
+    } else {
+      print('⚠️ Não conectado. Não foi possível enviar o comando.');
     }
   }
 
-  Future<void> sendCommand(String command) async {
-    print('📤 Enviando comando: $command');
-    if (!_isConnected || _characteristic == null) {
-      print('❌ Não é possível enviar: sem conexão ou characteristic inválida.');
-      return;
-    }
-
-    try {
-      await _ble.writeCharacteristicWithoutResponse(
-        _characteristic!,
-        value: command.codeUnits,
-      );
-      print('✅ Comando enviado.');
-    } catch (e) {
-      print('💥 Erro ao enviar comando: $e');
-    }
-  }
-
-  Future<void> _saveLastConnectedDeviceId(String deviceId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('lastConnectedDeviceId', deviceId);
-    print('💾 Último dispositivo salvo: $deviceId');
-  }
-
-  Future<String?> getLastConnectedDeviceId() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('lastConnectedDeviceId');
+  void disconnect() {
+    _connectionSubscription?.cancel();
+    _notifySubscription?.cancel();
+    _isConnected = false;
+    _connectionController.add(false);
   }
 
   void dispose() {
-    print('🧹 Limpando BLEService...');
-    _scanSubscription?.cancel();
-    _connectionSubscription?.cancel();
-    _connectionStateController.close();
+    disconnect();
+    _connectionController.close();
+    _receivedDataController.close();
     _devicesController.close();
   }
 }

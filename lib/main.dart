@@ -20,8 +20,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
-  final bleInitializer = BLEInitializer();
-  await bleInitializer.initializeBluetooth();
+  // final bleInitializer = BLEInitializer();
+  // await bleInitializer.initializeBluetooth();
 
   runApp(const MyApp());
 }
