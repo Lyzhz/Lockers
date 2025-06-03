@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io' show Platform, exit;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
@@ -11,7 +13,7 @@ import 'package:lockers/pages/sca_page.dart';
 import 'package:lockers/pages/facial_page.dart';
 import 'package:lockers/pages/collectingdata_page.dart';
 import 'package:lockers/pages/lockers_page.dart';
-import 'services/ble_initializer.dart';
+import 'services/ble_service.dart'; // Atualiza pro nome certo
 
 const Color selectedIconColor = Color.fromRGBO(40, 86, 155, 1);
 const Color navBarColor = Color.fromRGBO(47, 180, 242, 1);
@@ -20,8 +22,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
-  // final bleInitializer = BLEInitializer();
-  // await bleInitializer.initializeBluetooth();
+  // Inicia o BLE
+  // await BLEService.instance.init();
 
   runApp(const MyApp());
 }
@@ -82,6 +84,12 @@ class _MyHomePageState extends State<MyHomePage> {
       transitionDuration: const Duration(milliseconds: 100),
     ));
   }
+
+  // @override
+  // void dispose() {
+  //   super.dispose();
+  //   BLEService.instance.dispose();
+  // }
 
   @override
   Widget build(BuildContext context) {

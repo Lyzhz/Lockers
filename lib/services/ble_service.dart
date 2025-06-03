@@ -3,6 +3,11 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class BLEService {
+  static final BLEService _instance = BLEService._internal();
+  factory BLEService() => _instance;
+
+  BLEService._internal();
+
   final FlutterReactiveBle _ble = FlutterReactiveBle();
   final _connectionController = StreamController<bool>.broadcast();
   final _receivedDataController = StreamController<String>.broadcast();
@@ -21,6 +26,7 @@ class BLEService {
   QualifiedCharacteristic? _writeCharacteristic;
 
   bool _isConnected = false;
+  String? _connectedDeviceId; // Salva o ID do dispositivo conectado
 
   Future<void> initialize() async {
     await Permission.bluetooth.request();
@@ -46,12 +52,18 @@ class BLEService {
 
     await Future.delayed(timeout);
     await subscription.cancel();
+    print('🔍 Scan finalizado, ${foundDevices.length} dispositivo(s) encontrado(s).');
     return foundDevices;
   }
 
   Future<void> connectToDevice(DiscoveredDevice device) async {
+    if (_isConnected && _connectedDeviceId == device.id) {
+      print('⚠️ Já conectado a ${device.name}. Ignorando nova conexão.');
+      return;
+    }
+
     disconnect();
-    print('🔗 Conectando a ${device.name}...');
+    print('🔗 Conectando a ${device.name} (${device.id})...');
 
     _connectionSubscription = _ble.connectToDevice(
       id: device.id,
@@ -62,6 +74,7 @@ class BLEService {
       print('📶 Estado: ${update.connectionState}');
       if (update.connectionState == DeviceConnectionState.connected) {
         _isConnected = true;
+        _connectedDeviceId = device.id;
         _connectionController.add(true);
 
         _writeCharacteristic = QualifiedCharacteristic(
@@ -77,30 +90,77 @@ class BLEService {
         );
 
         _notifySubscription = _ble.subscribeToCharacteristic(notifyCharacteristic).listen(
-  (data) {
-    final value = String.fromCharCodes(data);
-    final hex = data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-    print('🔔 RAW: $data');
-    print('🔔 ASCII: $value');
-    print('🔔 HEX: $hex');
+          (data) {
+            final value = String.fromCharCodes(data);
+            final hex = data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+            print('🔔 NOTIFY RAW: $data');
+            print('🔔 NOTIFY ASCII: $value');
+            print('🔔 NOTIFY HEX: $hex');
+            _receivedDataController.add(value);
+          },
+          onError: (e) {
+            print('❌ Erro ao receber notificação: $e');
+          },
+        );
 
-    _receivedDataController.add(value);
-  },
-  onError: (e) {
-    print('❌ Erro ao receber notificação: $e');
-  },
-);
-
+        print('✅ Conexão BLE estabelecida e notificação assinada!');
       } else if (update.connectionState == DeviceConnectionState.disconnected) {
+        print('🔌 Dispositivo desconectado.');
         _isConnected = false;
+        _connectedDeviceId = null;
         _connectionController.add(false);
-        print('🔌 Dispositivo desconectado');
         _notifySubscription?.cancel();
       }
     }, onError: (e) {
       print('❌ Erro na conexão: $e');
+      _isConnected = false;
+      _connectedDeviceId = null;
       _connectionController.add(false);
     });
+  }
+
+  Future<void> reconnectIfNeeded() async {
+    if (_connectedDeviceId != null && !_isConnected) {
+      print('🔄 Tentando reconectar ao dispositivo $_connectedDeviceId...');
+      try {
+        _connectionSubscription = _ble.connectToDevice(
+          id: _connectedDeviceId!,
+          servicesWithCharacteristicsToDiscover: {
+            _serviceUuid: [_notifyUuid, _writeUuid],
+          },
+        ).listen((update) {
+          print('📶 Estado reconexão: ${update.connectionState}');
+          if (update.connectionState == DeviceConnectionState.connected) {
+            _isConnected = true;
+            _connectionController.add(true);
+
+            _writeCharacteristic = QualifiedCharacteristic(
+              serviceId: _serviceUuid,
+              characteristicId: _writeUuid,
+              deviceId: _connectedDeviceId!,
+            );
+
+            final notifyCharacteristic = QualifiedCharacteristic(
+              serviceId: _serviceUuid,
+              characteristicId: _notifyUuid,
+              deviceId: _connectedDeviceId!,
+            );
+
+            _notifySubscription = _ble.subscribeToCharacteristic(notifyCharacteristic).listen(
+              (data) {
+                final value = String.fromCharCodes(data);
+                print('🔔 Reconectado - NOTIFY: $value');
+                _receivedDataController.add(value);
+              },
+            );
+          }
+        });
+      } catch (e) {
+        print('❌ Falha na reconexão: $e');
+      }
+    } else {
+      print('⚠️ Nenhum dispositivo para reconectar.');
+    }
   }
 
   void sendCommand(String command) {
